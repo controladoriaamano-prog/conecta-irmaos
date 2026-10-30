@@ -208,8 +208,13 @@
 
   /* ---------------- nuvem opcional (Supabase REST) ---------------- */
   var cloud = (function () {
+    var falhou = false;
     function on() {
-      return !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.fetch);
+      return !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.fetch) && !falhou;
+    }
+    function vigiar(r) {
+      if (r && (r.status === 404 || r.status === 401 || r.status === 400)) falhou = true;
+      return r;
     }
     function headers(extra) {
       var h = {
@@ -227,14 +232,15 @@
         method: 'POST',
         headers: headers({ Prefer: 'resolution=merge-duplicates' }),
         body: JSON.stringify([{ id: obj.id, updated_at: new Date().toISOString(), data: obj }])
-      }).catch(function () { });
+      }).then(vigiar).catch(function () { });
     }
     function pullAll() {
       if (!on()) return Promise.resolve();
       var tables = ['ci_users', 'ci_requests', 'ci_orders'];
       return Promise.all(tables.map(function (t) {
         return fetch(base() + t + '?select=id,data', { headers: headers() })
-          .then(function (r) { return r.ok ? r.json() : []; })
+          .then(vigiar)
+          .then(function (r) { return r && r.ok ? r.json() : []; })
           .catch(function () { return []; });
       })).then(function (res) {
         var changed = false;
@@ -270,12 +276,13 @@
         method: 'POST',
         headers: headers({ Prefer: 'resolution=merge-duplicates' }),
         body: JSON.stringify([{ id: session.uid, updated_at: new Date().toISOString(), data: { last_seen: Date.now(), nome: u ? u.nome : 'Central' } }])
-      }).catch(function () { });
+      }).then(vigiar).catch(function () { });
     }
     function presencePull() {
       if (!on()) return Promise.resolve();
       return fetch(base() + 'ci_presence?select=id,data', { headers: headers() })
-        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(vigiar)
+        .then(function (r) { return r && r.ok ? r.json() : []; })
         .then(function (rows) {
           var changed = false;
           rows.forEach(function (row) {
@@ -968,7 +975,7 @@
       '<div class="card tight">' +
         '<div class="kv"><span>Projeto</span><span>' + esc((CFG.supabaseUrl || 'não configurado').replace('https://', '')) + '</span></div>' +
         '<div class="kv"><span>Chave anon</span><span>' + (CFG.supabaseAnonKey ? 'informada' : 'faltando') + '</span></div>' +
-        '<div class="kv"><span>Status</span><span>' + (cloud.on() ? 'sincronização ativa' : 'somente este aparelho') + '</span></div>' +
+        '<div class="kv"><span>Status</span><span>' + (cloud.on() ? 'sincronização ativa' : (CFG.supabaseUrl && CFG.supabaseAnonKey ? 'aguardando tabelas no Supabase' : 'somente este aparelho')) + '</span></div>' +
         '<div class="muted small" style="margin-top:8px">Com a URL e a chave anon no <b>config.js</b>, cadastros, pedidos e o "online agora" passam a valer em qualquer aparelho.</div>' +
         '<button class="btn sm ghost" style="margin-top:10px" onclick="App.testarNuvem()">Testar conexão</button></div>' +
       '<div class="sec-title">Sobre</div>' +
@@ -1545,6 +1552,7 @@
     fetch(cloud.base() + 'ci_users?select=id&limit=1', { headers: cloud.headers() })
       .then(function (r) {
         if (r.ok) toast('Conexão OK com o Supabase.');
+        else if (r.status === 404) toast('Chave OK, mas as tabelas ainda não existem. Rode o schema.');
         else toast('Erro ' + r.status + ': verifique o schema e a chave.');
       })
       .catch(function () { toast('Sem conexão com o Supabase.'); });
