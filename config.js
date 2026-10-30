@@ -4,5 +4,5 @@
    compartilhados entre todos os aparelhos (online agora, cadastros, OS). */
 window.CI_CONFIG = {
   supabaseUrl: 'https://sflfhokpqmrxljowctsf.supabase.co',
-  supabaseAnonKey: ''
+  supabaseAnonKey: 'sb_publishable__rPMzLQ2kZsDIEcTdB9Scw_AzAu6m69'
 };
