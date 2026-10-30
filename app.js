@@ -1073,6 +1073,7 @@
         '<div class="field2"><div class="field"><label>Valor (R$)</label><input name="valor" inputmode="decimal" placeholder="0,00"></div>' +
         '<div class="field"><label>Pagamento</label><select name="pagamento"><option>Pix</option><option>Dinheiro</option><option>Cartão</option><option>Transferência</option><option>A combinar</option></select></div></div>' +
         '<div class="field"><label>Observações</label><input name="obs"></div>' +
+        '<label class="row small" style="gap:8px;margin:2px 0 14px"><input type="checkbox" name="pago" style="width:auto"> <span class="muted">Pagamento já recebido (libera o recibo)</span></label>' +
         '<button class="btn" type="submit">Emitir OS</button></form>');
     },
     pickCliente: function (sel) {
@@ -1095,8 +1096,9 @@
         clienteNome: String(fd.get('clienteNome')), clienteCpf: String(fd.get('clienteCpf') || ''),
         clienteWhats: String(fd.get('clienteWhats') || ''), clienteEndereco: String(fd.get('clienteEndereco') || ''),
         servico: String(fd.get('servico')), valor: valor, pagamento: String(fd.get('pagamento') || ''),
-        obs: String(fd.get('obs') || ''), pago: false, criadoEm: new Date().toISOString()
+        obs: String(fd.get('obs') || ''), pago: !!fd.get('pago'), criadoEm: new Date().toISOString()
       };
+      if (o.pago) o.pagoEm = o.criadoEm;
       db.config.seqOS = (db.config.seqOS || 1) + 1;
       persistObj(db.orders, o, 'ci_orders');
       closeModal();
