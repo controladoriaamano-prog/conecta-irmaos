@@ -320,7 +320,7 @@
     return '<div class="pro-card">' +
       '<div class="head">' + avatar(p, 'sm') +
         '<div class="grow"><div class="row" style="gap:6px;flex-wrap:wrap"><span class="nm">' + esc(p.nome) + '</span>' +
-        (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') + '</div>' +
+        (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') + (p.demo ? '<span class="badge-demo">exemplo</span>' : '') + '</div>' +
         '<div class="area">' + esc(p.profissao || areaOf(p)) + '</div>' +
         '<div class="muted small">' + esc(p.atende || 'Atendimento na região') + (isOnline(p.id) ? ' · <span style="color:#22a06b;font-weight:700">online</span>' : '') + '</div></div>' +
       '</div>' +
