@@ -349,6 +349,45 @@
   }
 
   /* ---------------- componentes ---------------- */
+  function logoSvg(sz, dark) {
+    var s = sz || 56;
+    return '<svg class="logo-svg" width="' + s + '" height="' + s + '" viewBox="0 0 64 64" fill="none">' +
+      '<path d="M32 58C19 47 7 36 7 24.5 7 15.8 13.8 9 22.4 9c3.9 0 7.4 1.8 9.6 4.6C34.2 10.8 37.7 9 41.6 9 50.2 9 57 15.8 57 24.5 57 36 45 47 32 58Z" stroke="' + (dark ? '#12345c' : '#ffffff') + '" stroke-width="3.2" stroke-linejoin="round"/>' +
+      '<path d="M32 22v18M24.5 29.5h15" stroke="#e8b22b" stroke-width="3.4" stroke-linecap="round"/>' +
+      '<circle cx="32" cy="6" r="2.4" fill="#e8b22b"/><circle cx="26" cy="7.5" r="1.8" fill="#e8b22b"/><circle cx="38" cy="7.5" r="1.8" fill="#e8b22b"/>' +
+      '</svg>';
+  }
+  var CAT_COLOR = {
+    'Construção': '#f4772e', 'Alimentação': '#e5484d', 'Beleza': '#e0508f', 'Saúde': '#16a34a',
+    'Automotivo': '#dc2626', 'Tecnologia': '#5b5bd6', 'Serviços': '#2f7ff0', 'Eventos': '#8b5cf6',
+    'Gestão': '#0ea5e9', 'Outros': '#7c8794'
+  };
+  function isFav(id) {
+    var f = [];
+    try { f = JSON.parse(localStorage.getItem('ci_favs') || '[]'); } catch (e) { f = []; }
+    return f.indexOf(id) >= 0;
+  }
+  function toggleFav(id) {
+    var f = [];
+    try { f = JSON.parse(localStorage.getItem('ci_favs') || '[]'); } catch (e) { f = []; }
+    var i = f.indexOf(id);
+    if (i >= 0) f.splice(i, 1); else f.push(id);
+    localStorage.setItem('ci_favs', JSON.stringify(f));
+  }
+  function nota(p) { return p.nota || (p.estrelas ? Number(p.estrelas).toFixed(1) : '4.8'); }
+  function avaliacoes(p) { return p.avaliacoes || (p.estrelas ? Number(p.estrelas) * 5 - 1 : 7); }
+
+  function chooser() {
+    openModal('<h3>Como você quer entrar?</h3>' +
+      '<button class="card tight" style="width:100%;text-align:left;display:flex;gap:12px;align-items:center;cursor:pointer" onclick="App.closeModal();App.route(\'cliente\')">' +
+        '<div style="font-size:24px">🔎</div><div class="grow"><b> Sou cliente</b><div class="muted small">Encontrar profissional ou pedir um serviço</div></div><div style="color:var(--cinza)">›</div></button>' +
+      '<button class="card tight" style="width:100%;text-align:left;display:flex;gap:12px;align-items:center;cursor:pointer" onclick="App.closeModal();App.route(\'profissional\')">' +
+        '<div style="font-size:24px">🧑‍🔧</div><div class="grow"><b> Sou profissional</b><div class="muted small">Divulgar meu serviço e atender</div></div><div style="color:var(--cinza)">›</div></button>' +
+      '<button class="card tight" style="width:100%;text-align:left;display:flex;gap:12px;align-items:center;cursor:pointer" onclick="App.closeModal();App.route(\'master\')">' +
+        '<div style="font-size:24px">🛡️</div><div class="grow"><b> Central / administração</b><div class="muted small">Aprovações, caça e configurações</div></div><div style="color:var(--cinza)">›</div></button>');
+  }
+
+
   function brandBlock(compact) {
     return '<div class="brand" style="margin:' + (compact ? '6px 0 14px' : '18px 0 20px') + '">' +
       '<div class="logo"><div class="mark">CI</div><div class="nome">' + esc(db.config.marca || 'Conecta Irmãos') + '</div></div>' +
@@ -365,6 +404,10 @@
   }
   function tabbar(items, current) {
     return '<div class="tabbar"><div class="inner">' + items.map(function (it) {
+      if (it.fab) {
+        return '<button class="fab-item" onclick="' + it.action + '">' +
+          '<span class="fab-plus">+</span><span class="fab-lb">' + it.label + '</span></button>';
+      }
       return '<button class="' + (current === it.id ? 'on' : '') + '" onclick="App.go(\'' + it.id + '\')">' +
         '<span class="ic">' + it.ic + '</span>' + it.label +
         (it.badge ? '<span class="tbadge">' + (it.badge > 9 ? '9+' : it.badge) + '</span>' : '') +
@@ -386,51 +429,45 @@
     return '<span class="stars">' + '★'.repeat(n) + '<span style="opacity:.25">' + '★'.repeat(5 - n) + '</span></span>';
   }
   function proCard(p) {
-    var wa = p.whats ? '<button class="btn wapp sm" onclick="App.wa(\'' + esc(p.whats) + '\',\'' + esc(p.nome) + '\')">WhatsApp</button>' : '';
-    return '<div class="pro-card"><div class="pc-body">' +
-      '<div class="pc-top">' + avatar(p) +
-        '<div class="grow"><div class="pc-name">' + esc(p.nome) +
-          (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') +
-          (p.demo && !p.modelo ? '<span class="badge-demo">exemplo</span>' : '') + '</div>' +
-        '<div class="pc-role">' + esc(p.profissao || areaOf(p)) + (p.apelido ? ' · "' + esc(p.apelido) + '"' : '') + '</div>' +
-        '<div class="pc-meta"><span>' + (AREA_ICON[areaOf(p)] || '') + ' ' + esc(areaOf(p)) + '</span>' +
-          '<span>' + (isOnline(p.id) ? '<span class="dot"></span> online' : '<span class="dot off"></span> offline') + '</span>' +
-          (stars(p.estrelas) ? stars(p.estrelas) : '') + '</div></div>' +
-      '</div>' +
-      (p.faz ? '<div class="pc-desc">' + esc(p.faz) + '</div>' : '') +
-      '<div class="pc-tags">' +
-        (p.atende ? '<span class="chip gray">📍 ' + esc(p.atende) + '</span>' : '') +
-        (p.dias ? '<span class="chip gray">🗓 ' + esc(p.dias) + '</span>' : '') +
-        (p.horario ? '<span class="chip gray">🕘 ' + esc(p.horario) + '</span>' : '') +
-        (p.cnpj ? '<span class="chip gold">CNPJ</span>' : '') +
-      '</div>' +
-      '<div class="pc-actions">' + wa +
-        '<button class="btn sm ghost" onclick="App.openPro(\'' + p.id + '\')">Ver perfil</button></div>' +
+    var fav = isFav(p.id);
+    return '<div class="list-card">' + avatar(p, 'lg') +
+      '<div class="grow" style="min-width:0">' +
+        '<div class="row between" style="align-items:flex-start;gap:6px">' +
+          '<div style="min-width:0"><div class="pc-name">' + esc(p.nome) + '</div>' +
+            '<div class="pc-role">' + esc(p.profissao || areaOf(p)) + '</div>' +
+            '<div class="rating">' + stars(p.estrelas) + ' <b>' + nota(p) + '</b> <span>(' + avaliacoes(p) + ')</span></div></div>' +
+          '<div style="text-align:right"><span class="pill-ativo">' + (isOnline(p.id) ? '● Ativo' : 'Ativo') + '</span>' +
+            '<button class="fav-btn" onclick="App.fav(\'' + p.id + '\')">' + (fav ? '♥' : '♡') + '</button></div>' +
+        '</div>' +
+        '<div class="pc-actions" style="margin-top:9px">' +
+          '<button class="btn sm wapp" onclick="App.wa(\'' + esc(p.whats || '') + '\',\'' + esc(p.nome) + '\')">💬 WhatsApp</button>' +
+          '<button class="btn sm ghost" onclick="App.openPro(\'' + p.id + '\')">Ver cartão</button>' +
+        '</div>' +
       '</div></div>';
   }
 
   /* ---------------- telas de entrada ---------------- */
   function viewStart() {
-    var totalPros = pros().filter(function (p) { return p.status === 'aprovado'; }).length;
-    var on = onlineCount();
-    return '<div class="wrap">' + brandBlock() +
-      '<div class="card" style="text-align:center">' +
-        '<div class="row" style="justify-content:center;gap:16px;flex-wrap:wrap">' +
-          '<div><b style="font-size:22px;color:var(--verde)">' + totalPros + '</b><div class="muted small">profissionais</div></div>' +
-          '<div style="width:1px;height:32px;background:var(--linha)"></div>' +
-          '<div><b style="font-size:22px;color:var(--verde)">' + on + '</b><div class="muted small"><span class="livedot"></span>online agora</div></div>' +
-          '<div style="width:1px;height:32px;background:var(--linha)"></div>' +
-          '<div><b style="font-size:22px;color:var(--verde)">' + users().length + '</b><div class="muted small">na comunidade</div></div>' +
-        '</div>' +
+    var total = pros().filter(function (p) { return p.status === 'aprovado'; }).length;
+    return '<div class="start"><div class="start-inner">' +
+      '<div class="start-top"><div class="small" style="opacity:.55;letter-spacing:2px">JUNTOS SOMOS MAIS FORTES</div></div>' +
+      '<div class="brand-big">' + logoSvg(92) +
+        '<div class="word">Conecta <span>Irmãos</span></div>' +
+        '<div class="church">' + esc(db.config.igreja || 'Igreja Presença de Deus') + '</div>' +
+        '<p class="tagline">Talentos que servem.<br>Pessoas que se ajudam.</p>' +
       '</div>' +
-      '<p class="center muted" style="margin:16px 4px 14px">Talentos que servem.<br>Pessoas que se ajudam.</p>' +
-      '<button class="card" style="width:100%;text-align:left;display:flex;gap:12px;align-items:center;cursor:pointer;border:1px solid var(--linha)" onclick="App.route(\'cliente\')">' +
-        '<div style="font-size:26px">🔎</div><div class="grow"><b> Sou cliente</b><div class="muted small">Encontrar um profissional ou pedir um serviço</div></div><div style="color:var(--cinza)">›</div></button>' +
-      '<button class="card" style="width:100%;text-align:left;display:flex;gap:12px;align-items:center;cursor:pointer;border:1px solid var(--linha)" onclick="App.route(\'profissional\')">' +
-        '<div style="font-size:26px">🧑‍🔧</div><div class="grow"><b> Sou profissional</b><div class="muted small">Divulgar meu serviço e atender clientes</div></div><div style="color:var(--cinza)">›</div></button>' +
-      '<button class="btn ghost" style="margin-top:4px" onclick="App.route(\'master\')">⚙️ Central gerencial e técnica</button>' +
-      '<p class="center small" style="color:#9aa8a2;margin-top:14px">A Central reúne os dois painéis: cadastros, aprovações, certificações e o modo caça profissional em teste.</p>' +
-      '</div>' + footer();
+      '<div class="start-stats">' +
+        '<div><b>' + total + '</b><span>profissionais</span></div>' +
+        '<div><b>' + onlineCount() + '</b><span><span class="livedot"></span>online</span></div>' +
+        '<div><b>' + users().length + '</b><span>na comunidade</span></div>' +
+      '</div>' +
+      '<div style="margin-top:auto;padding-top:24px">' +
+        '<button class="btn gold" onclick="App.choose()">Entrar</button>' +
+        '<button class="btn outline-light" style="margin-top:10px" onclick="App.choose()">Cadastrar</button>' +
+        '<button class="btn link" style="color:rgba(255,255,255,.45);margin-top:10px" onclick="App.route(\'master\')">Acesso da Central</button>' +
+        '<div class="start-foot">by Elton · Sistema e Logística</div>' +
+      '</div>' +
+      '</div></div>';
   }
 
   function viewAuth(role) {
@@ -503,15 +540,22 @@
     var tab = S.tab || 'buscar';
     var content = '';
     if (tab === 'buscar') content = clienteBuscar(u);
+    else if (tab === 'categorias') content = clienteCategorias();
+    else if (tab === 'favoritos') content = clienteFavoritos();
     else if (tab === 'pedidos') content = clientePedidos(u);
     else content = clientePerfil(u);
     return topbar(u) + '<div class="wrap">' + content + '</div>' + footer() +
-      tabbar([{ id: 'buscar', ic: '🔎', label: 'Buscar' }, { id: 'pedidos', ic: '📋', label: 'Pedidos' }, { id: 'perfil', ic: '👤', label: 'Perfil' }], tab);
+      tabbar([
+        { id: 'buscar', ic: '🏠', label: 'Início' },
+        { id: 'categorias', ic: '▦', label: 'Categorias' },
+        { id: 'solicitar', fab: true, label: 'Solicitar', action: 'App.novoPedidoCliente()' },
+        { id: 'favoritos', ic: '♡', label: 'Favoritos' },
+        { id: 'perfil', ic: '👤', label: 'Perfil' }
+      ], tab);
   }
 
   function clienteBuscar(u) {
-    var q = norm(S.q);
-    var filtro = S.filtro || 'todos';
+    var q = norm(S.q), filtro = S.filtro || 'todos';
     var base = pros().filter(function (p) {
       if (p.status !== 'aprovado') return false;
       if (S.area && areaOf(p) !== S.area) return false;
@@ -524,30 +568,66 @@
       if (filtro === 'top') return Number(p.estrelas || 0) >= 4;
       return true;
     }).sort(function (a, b) {
-      return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0) ||
-        Number(b.estrelas || 0) - Number(a.estrelas || 0) ||
-        String(a.nome).localeCompare(String(b.nome));
+      return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0) || Number(b.estrelas || 0) - Number(a.estrelas || 0);
     });
-    var cats = '<button class="' + (!S.area ? 'on' : '') + '" onclick="App.area(\'\')"><span class="ic">✨</span>Todas</button>' +
+    return '<div class="home-head"><div><div class="hh-small">Bem-vindo</div><b>' + esc((u.nome || '').split(' ')[0]) + '</b></div>' +
+      '<div class="row" style="gap:6px">' + logoSvg(34) + '</div></div>' +
+      '<div class="search-pill"><span>🔎</span><input id="busca" placeholder="Buscar por serviço ou profissional…" value="' + esc(S.q) + '" oninput="App.search(this.value)"></div>' +
+      '<div class="hero-mini"><div><b>Aqui você encontra profissionais da nossa igreja</b><span>com confiança e propósito.</span></div></div>' +
+      '<div class="row between" style="margin:16px 2px 10px"><b class="sec-inline">Categorias de Serviços</b>' +
+        '<button class="btn xs link" onclick="App.go(\'categorias\')">ver todas</button></div>' +
+      '<div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px">' +
+        Object.keys(AREAS).slice(0, 6).map(function (a) {
+          return '<button class="cat-tile" style="background:' + (CAT_COLOR[a] || '#7c8794') + '" onclick="App.area(\'' + esc(a) + '\');App.go(\'buscar\')">' +
+            '<div class="ci">' + (AREA_ICON[a] || '📦') + '</div><div class="cl">' + esc(a) + '</div></button>';
+        }).join('') +
+      '</div>' +
+      '<div class="row between" style="margin:18px 2px 10px"><b class="sec-inline">' + (S.area ? esc(S.area) : 'Profissionais') + ' · ' + list.length + '</b>' +
+        (S.area || S.q ? '<button class="btn xs link" onclick="App.area(\'\');App.search(\'\')">limpar</button>' : '') + '</div>' +
+      '<div class="filters">' + [['todos', 'Todos'], ['online', 'Online'], ['verificados', 'Verificados'], ['top', 'Melhores']].map(function (f) {
+        return '<button class="' + (filtro === f[0] ? 'on' : '') + '" onclick="App.filtro(\'' + f[0] + '\')">' + f[1] + '</button>';
+      }).join('') + '</div>' +
+      (list.length ? list.map(proCard).join('') : '<div class="empty"><span class="big">🔍</span>Nenhum profissional aqui.</div>');
+  }
+
+  function clienteCategorias() {
+    return '<div class="home-head"><div><div class="hh-small">Explorar</div><b>Categorias</b></div>' + logoSvg(34) + '</div>' +
+      '<div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px">' +
       Object.keys(AREAS).map(function (a) {
-        return '<button class="' + (S.area === a ? 'on' : '') + '" onclick="App.area(\'' + esc(a) + '\')"><span class="ic">' +
-          (AREA_ICON[a] || '📦') + '</span>' + esc(a) + '</button>';
-      }).join('');
-    var filtros = [['todos', 'Todos'], ['online', 'Online agora'], ['verificados', 'Verificados'], ['top', 'Melhor avaliados']].map(function (f) {
-      return '<button class="' + (filtro === f[0] ? 'on' : '') + '" onclick="App.filtro(\'' + f[0] + '\')">' + f[1] + '</button>';
-    }).join('');
-    return '<div class="hero"><h2>Olá, ' + esc((u.nome || '').split(' ')[0]) + '</h2>' +
-      '<p>Talento da nossa comunidade, pertinho de você.</p>' +
-      '<div class="busca"><span>🔎</span><input id="busca" placeholder="Eletricista, bolo, costura…" value="' + esc(S.q) + '" oninput="App.search(this.value)"></div></div>' +
-      '<div class="cat-scroll">' + cats + '</div>' +
-      '<div class="filters">' + filtros + '</div>' +
-      '<div class="row between" style="margin:0 2px 10px"><b style="font-size:13px">' + list.length + ' profissional' + (list.length === 1 ? '' : 'is') +
-        (S.area ? ' · ' + esc(S.area) : '') + '</b>' +
-        (S.q ? '<button class="btn xs link" onclick="App.search(\'\')">limpar busca</button>' : '') + '</div>' +
-      (list.length ? '<div class="grid">' + list.map(proCard).join('') + '</div>'
-        : '<div class="empty"><span class="big">🔍</span>Nenhum profissional aqui.<br><span class="small">Tente outra palavra ou área.</span></div>') +
-      '<div class="card flat" style="margin-top:16px"><div class="row between"><div><b>Pedir um serviço</b><div class="muted small">A plataforma procura profissionais disponíveis para você.</div></div>' +
-      '<button class="btn sm" onclick="App.caçaCliente()">Solicitar</button></div></div>';
+        var n = pros().filter(function (p) { return p.status === 'aprovado' && areaOf(p) === a; }).length;
+        return '<button class="cat-big" style="background:' + (CAT_COLOR[a] || '#7c8794') + '" onclick="App.area(\'' + esc(a) + '\');App.go(\'buscar\')">' +
+          '<div class="ci">' + (AREA_ICON[a] || '📦') + '</div><div class="cb-t">' + esc(a) + '</div><div class="cb-n">' + n + ' profissional(is)</div></button>';
+      }).join('') + '</div>';
+  }
+
+  function clienteFavoritos() {
+    var f = [];
+    try { f = JSON.parse(localStorage.getItem('ci_favs') || '[]'); } catch (e) { f = []; }
+    var list = pros().filter(function (p) { return f.indexOf(p.id) >= 0 && p.status === 'aprovado'; });
+    return '<div class="home-head"><div><div class="hh-small">Seus</div><b>Favoritos</b></div>' + logoSvg(34) + '</div>' +
+      (list.length ? '<div style="margin-top:12px">' + list.map(proCard).join('') + '</div>'
+        : '<div class="empty"><span class="big">♡</span>Toque no coração de um profissional<br><span class="small">para salvar aqui.</span></div>');
+  }
+
+  function perfilProSheet(p) {
+    var wa = p.whats ? '<button class="btn sm wapp" style="flex:0 0 auto" onclick="App.wa(\'' + esc(p.whats) + '\',\'' + esc(p.nome) + '\')">💬</button>' : '';
+    return '<div class="psheet">' +
+      '<div class="ps-top">' + avatar(p, 'xl') +
+        '<div class="grow"><div class="row" style="gap:6px;flex-wrap:wrap"><b class="ps-name">' + esc(p.nome) + '</b>' +
+          (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') + '</div>' +
+        '<div class="ps-role">' + esc(p.profissao || areaOf(p)) + '</div>' +
+        '<div class="ps-rate">' + stars(p.estrelas) + ' <b>' + nota(p) + '</b> <span>(' + avaliacoes(p) + ' avaliações)</span> ' +
+          '<span class="pill-ativo">● Ativo</span></div></div></div>' +
+      '<div class="ps-block"><div class="ps-h">Sobre mim</div><div class="small">' + esc(p.faz || 'Profissional da nossa comunidade.') + '</div></div>' +
+      '<div class="ps-block"><div class="ps-h">Especialidades</div><div class="chips">' +
+        (p.area ? '<span class="chip">' + esc(p.area) + '</span>' : '') +
+        (p.atende ? '<span class="chip gray">📍 ' + esc(p.atende) + '</span>' : '') +
+        (p.dias ? '<span class="chip gray">🗓 ' + esc(p.dias) + '</span>' : '') +
+        (p.horario ? '<span class="chip gray">🕘 ' + esc(p.horario) + '</span>' : '') + '</div></div>' +
+      '<div class="ps-block"><div class="ps-h">Contato</div>' +
+        '<div class="row between"><div class="small">' + (p.whats || 'sem telefone') + '</div><div class="row" style="gap:6px">' + wa + '</div></div></div>' +
+      '<button class="btn gold" style="margin-top:14px" onclick="App.wa(\'' + esc(p.whats || '') + '\',\'' + esc(p.nome) + '\')">Solicitar Orçamento</button>' +
+      '</div>';
   }
 
   function clientePedidos(u) {
@@ -1177,17 +1257,10 @@
     },
     openPro: function (id) {
       var p = findUser(id); if (!p) return;
-      openModal('<div class="row">' + avatar(p, 'lg') + '<div class="grow"><h3 style="margin:0">' + esc(p.nome) + '</h3>' +
-        '<div class="small" style="color:var(--verde);font-weight:700">' + esc(p.profissao || '') + '</div>' +
-        '<div class="row" style="gap:6px;margin-top:4px;flex-wrap:wrap">' + (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') + stars(p.estrelas) + '</div></div></div>' +
-        '<div class="card flat" style="margin-top:12px">' +
-        '<div class="kv"><span>Área</span><span>' + esc(areaOf(p)) + '</span></div>' +
-        '<div class="kv"><span>Atende</span><span>' + esc(p.atende || '—') + '</span></div>' +
-        '<div class="kv"><span>Dias / horário</span><span>' + esc(p.dias || '—') + ' · ' + esc(p.horario || '—') + '</span></div>' +
-        '<div class="kv"><span>Situação</span><span>' + (isOnline(p.id) ? 'online agora' : 'offline') + '</span></div>' +
-        (p.faz ? '<div style="margin-top:8px" class="small">' + esc(p.faz) + '</div>' : '') + '</div>' +
-        '<button class="btn" onclick="App.wa(\'' + esc(p.whats || '') + '\',\'' + esc(p.nome) + '\')">Falar no WhatsApp</button>');
+      openModal(perfilProSheet(p));
     },
+    choose: function () { chooser(); },
+    fav: function (id) { toggleFav(id); render(); },
     zoomImg: function (src) {
       openModal('<img src="' + src + '" style="width:100%;border-radius:12px">');
     },
