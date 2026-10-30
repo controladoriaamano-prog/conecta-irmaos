@@ -1,0 +1,15 @@
+{
+  "name": "Conecta Irmãos — Igreja Presença de Deus",
+  "short_name": "Conecta Irmãos",
+  "description": "Plataforma de serviços da comunidade: encontre profissionais da igreja, solicite serviços e gerencie atendimentos.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f4ee",
+  "theme_color": "#0e5c44",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
