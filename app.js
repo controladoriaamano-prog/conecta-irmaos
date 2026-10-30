@@ -30,7 +30,7 @@
   var db = null;
   var session = null;
   var TMP = { foto: null, cert: [], clientes: null };
-  var S = { route: 'start', tab: '', q: '', area: '', doc: null, selPro: null };
+  var S = { route: 'start', tab: '', q: '', area: '', filtro: 'todos', doc: null, selPro: null };
 
   /* ---------------- utilidades ---------------- */
   function $(s, r) { return (r || document).querySelector(s); }
@@ -61,6 +61,66 @@
   }
   function digits(v) { return String(v || '').replace(/\D/g, ''); }
   function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+  function tempoRel(iso) {
+    var t = Date.now() - new Date(iso).getTime();
+    if (!iso || isNaN(t)) return '';
+    var m = Math.floor(t / 60000);
+    if (m < 1) return 'agora';
+    if (m < 60) return 'há ' + m + ' min';
+    var h = Math.floor(m / 60);
+    if (h < 24) return 'há ' + h + 'h';
+    return 'há ' + Math.floor(h / 24) + 'd';
+  }
+  var _UNI = ['zero', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove',
+    'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+  var _DEZ = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  var _CEM = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+  function c3(n) {
+    if (n === 100) return 'cem';
+    var out = [], c = Math.floor(n / 100), r = n % 100;
+    if (c) out.push(_CEM[c]);
+    if (r) {
+      if (r < 20) out.push(_UNI[r]);
+      else out.push(_DEZ[Math.floor(r / 10)] + (r % 10 ? ' e ' + _UNI[r % 10] : ''));
+    }
+    return out.join(' e ');
+  }
+  function extenso(v) {
+    var n = Math.round(Number(v || 0) * 100) / 100;
+    var inteiro = Math.floor(n), cent = Math.round((n - inteiro) * 100);
+    function inteiroTxt(x) {
+      if (x === 0) return 'zero';
+      var parts = [], mi = Math.floor(x / 1000000), mil = Math.floor((x % 1000000) / 1000), resto = x % 1000;
+      if (mi) parts.push(mi === 1 ? 'um milhão' : c3(mi) + ' milhões');
+      if (mil) parts.push(mil === 1 ? 'mil' : c3(mil) + ' mil');
+      if (resto) parts.push(c3(resto));
+      var out = '';
+      parts.forEach(function (p, i) {
+        if (i === 0) out = p;
+        else if (i === parts.length - 1 && resto < 100) out += ' e ' + p;
+        else out += ' ' + p;
+      });
+      return out;
+    }
+    var txt = inteiroTxt(inteiro) + (inteiro === 1 ? ' real'
+      : (inteiro >= 1000000 && inteiro % 1000000 === 0 ? ' de reais' : ' reais'));
+    if (cent) txt += ' e ' + c3(cent) + (cent === 1 ? ' centavo' : ' centavos');
+    return txt;
+  }
+  function timeline(r) {
+    var h = (r.historico || []).slice(-5);
+    if (!h.length) return '<ul class="tl"><li><b>Pedido criado</b> · ' + dtbr(r.criadoEm) + '</li></ul>';
+    return '<ul class="tl">' + h.map(function (x) {
+      return '<li><b>' + esc(x.texto) + '</b> · ' + dtbr(x.em) + '</li>';
+    }).join('') + '</ul>';
+  }
+  function badgeCacaPro(u) {
+    return db.requests.filter(function (r) {
+      if ((r.atribuidos || []).indexOf(u.id) < 0) return false;
+      if (r.status === 'concluida') return false;
+      return !(r.propostas || []).some(function (p) { return p.profId === u.id; });
+    }).length;
+  }
   function maskCPF(v) {
     var d = digits(v).slice(0, 11);
     return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
@@ -298,7 +358,9 @@
   function tabbar(items, current) {
     return '<div class="tabbar"><div class="inner">' + items.map(function (it) {
       return '<button class="' + (current === it.id ? 'on' : '') + '" onclick="App.go(\'' + it.id + '\')">' +
-        '<span class="ic">' + it.ic + '</span>' + it.label + '</button>';
+        '<span class="ic">' + it.ic + '</span>' + it.label +
+        (it.badge ? '<span class="tbadge">' + (it.badge > 9 ? '9+' : it.badge) + '</span>' : '') +
+        '</button>';
     }).join('') + '</div></div>';
   }
   function footer() {
@@ -316,19 +378,27 @@
     return '<span class="stars">' + '★'.repeat(n) + '<span style="opacity:.25">' + '★'.repeat(5 - n) + '</span></span>';
   }
   function proCard(p) {
-    var wa = p.whats ? '<button class="btn sm ghost" onclick="App.wa(\'' + esc(p.whats) + '\',\'' + esc(p.nome) + '\')">WhatsApp</button>' : '';
-    return '<div class="pro-card">' +
-      '<div class="head">' + avatar(p, 'sm') +
-        '<div class="grow"><div class="row" style="gap:6px;flex-wrap:wrap"><span class="nm">' + esc(p.nome) + '</span>' +
-        (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') + (p.demo ? '<span class="badge-demo">exemplo</span>' : '') + '</div>' +
-        '<div class="area">' + esc(p.profissao || areaOf(p)) + '</div>' +
-        '<div class="muted small">' + esc(p.atende || 'Atendimento na região') + (isOnline(p.id) ? ' · <span style="color:#22a06b;font-weight:700">online</span>' : '') + '</div></div>' +
+    var wa = p.whats ? '<button class="btn wapp sm" onclick="App.wa(\'' + esc(p.whats) + '\',\'' + esc(p.nome) + '\')">WhatsApp</button>' : '';
+    return '<div class="pro-card"><div class="pc-body">' +
+      '<div class="pc-top">' + avatar(p) +
+        '<div class="grow"><div class="pc-name">' + esc(p.nome) +
+          (verified(p) ? '<span class="badge-verif">✔ verificado</span>' : '') +
+          (p.demo ? '<span class="badge-demo">exemplo</span>' : '') + '</div>' +
+        '<div class="pc-role">' + esc(p.profissao || areaOf(p)) + (p.apelido ? ' · "' + esc(p.apelido) + '"' : '') + '</div>' +
+        '<div class="pc-meta"><span>' + (AREA_ICON[areaOf(p)] || '') + ' ' + esc(areaOf(p)) + '</span>' +
+          '<span>' + (isOnline(p.id) ? '<span class="dot"></span> online' : '<span class="dot off"></span> offline') + '</span>' +
+          (stars(p.estrelas) ? stars(p.estrelas) : '') + '</div></div>' +
       '</div>' +
-      (p.apelido ? '<div class="muted small" style="margin-top:4px">"' + esc(p.apelido) + '"</div>' : '') +
-      (p.faz ? '<div class="desc">' + esc(p.faz) + '</div>' : '') +
-      '<div class="foot">' + stars(p.estrelas) + (p.cnpj ? '<span class="chip green">CNPJ</span>' : '') +
-        wa + '<button class="btn sm ghost" onclick="App.openPro(\'' + p.id + '\')">Ver perfil</button></div>' +
-      '</div>';
+      (p.faz ? '<div class="pc-desc">' + esc(p.faz) + '</div>' : '') +
+      '<div class="pc-tags">' +
+        (p.atende ? '<span class="chip gray">📍 ' + esc(p.atende) + '</span>' : '') +
+        (p.dias ? '<span class="chip gray">🗓 ' + esc(p.dias) + '</span>' : '') +
+        (p.horario ? '<span class="chip gray">🕘 ' + esc(p.horario) + '</span>' : '') +
+        (p.cnpj ? '<span class="chip gold">CNPJ</span>' : '') +
+      '</div>' +
+      '<div class="pc-actions">' + wa +
+        '<button class="btn sm ghost" onclick="App.openPro(\'' + p.id + '\')">Ver perfil</button></div>' +
+      '</div></div>';
   }
 
   /* ---------------- telas de entrada ---------------- */
@@ -429,26 +499,41 @@
 
   function clienteBuscar(u) {
     var q = norm(S.q);
-    var list = pros().filter(function (p) {
+    var filtro = S.filtro || 'todos';
+    var base = pros().filter(function (p) {
       if (p.status !== 'aprovado') return false;
       if (S.area && areaOf(p) !== S.area) return false;
       if (!q) return true;
       return norm([p.nome, p.apelido, p.profissao, p.faz, p.atende, p.area].join(' ')).indexOf(q) >= 0;
-    }).sort(function (a, b) { return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0); });
-
-    var cats = Object.keys(AREAS).map(function (a) {
-      return '<button class="card tight" style="text-align:center;border:1px solid ' + (S.area === a ? 'var(--verde)' : 'var(--linha)') + ';cursor:pointer;padding:12px 6px" onclick="App.area(\'' + esc(a) + '\')">' +
-        '<div style="font-size:22px">' + (AREA_ICON[a] || '📦') + '</div><div class="small" style="font-weight:700;margin-top:2px">' + esc(a) + '</div></button>';
+    });
+    var list = base.filter(function (p) {
+      if (filtro === 'online') return isOnline(p.id);
+      if (filtro === 'verificados') return verified(p);
+      if (filtro === 'top') return Number(p.estrelas || 0) >= 4;
+      return true;
+    }).sort(function (a, b) {
+      return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0) ||
+        Number(b.estrelas || 0) - Number(a.estrelas || 0) ||
+        String(a.nome).localeCompare(String(b.nome));
+    });
+    var cats = '<button class="' + (!S.area ? 'on' : '') + '" onclick="App.area(\'\')"><span class="ic">✨</span>Todas</button>' +
+      Object.keys(AREAS).map(function (a) {
+        return '<button class="' + (S.area === a ? 'on' : '') + '" onclick="App.area(\'' + esc(a) + '\')"><span class="ic">' +
+          (AREA_ICON[a] || '📦') + '</span>' + esc(a) + '</button>';
+      }).join('');
+    var filtros = [['todos', 'Todos'], ['online', 'Online agora'], ['verificados', 'Verificados'], ['top', 'Melhor avaliados']].map(function (f) {
+      return '<button class="' + (filtro === f[0] ? 'on' : '') + '" onclick="App.filtro(\'' + f[0] + '\')">' + f[1] + '</button>';
     }).join('');
-
-    return '<h2>Olá, ' + esc((u.nome || '').split(' ')[0]) + '</h2>' +
-      '<p class="muted small">Encontre um irmão profissional ou peça um serviço.</p>' +
-      '<div class="field" style="margin:12px 0 10px"><input id="busca" placeholder="O que você procura? Ex.: eletricista, bolo…" value="' + esc(S.q) + '" oninput="App.search(this.value)"></div>' +
-      '<div class="grid g3" style="grid-template-columns:repeat(3,1fr)">' + cats + '</div>' +
-      (S.area ? '<div class="row between" style="margin:14px 0 8px"><b style="font-size:14px">' + (AREA_ICON[S.area] || '') + ' ' + esc(S.area) + '</b><button class="btn xs ghost" onclick="App.area(\'\')">limpar</button></div>'
-        : '<div class="sec-title">Profissionais' + (list.length ? ' · ' + list.length : '') + '</div>') +
+    return '<div class="hero"><h2>Olá, ' + esc((u.nome || '').split(' ')[0]) + '</h2>' +
+      '<p>Talento da nossa comunidade, pertinho de você.</p>' +
+      '<div class="busca"><span>🔎</span><input id="busca" placeholder="Eletricista, bolo, costura…" value="' + esc(S.q) + '" oninput="App.search(this.value)"></div></div>' +
+      '<div class="cat-scroll">' + cats + '</div>' +
+      '<div class="filters">' + filtros + '</div>' +
+      '<div class="row between" style="margin:0 2px 10px"><b style="font-size:13px">' + list.length + ' profissional' + (list.length === 1 ? '' : 'is') +
+        (S.area ? ' · ' + esc(S.area) : '') + '</b>' +
+        (S.q ? '<button class="btn xs link" onclick="App.search(\'\')">limpar busca</button>' : '') + '</div>' +
       (list.length ? '<div class="grid">' + list.map(proCard).join('') + '</div>'
-        : '<div class="empty"><span class="big">🔍</span>Nenhum profissional encontrado.<br><span class="small">Tente outra palavra ou área.</span></div>') +
+        : '<div class="empty"><span class="big">🔍</span>Nenhum profissional aqui.<br><span class="small">Tente outra palavra ou área.</span></div>') +
       '<div class="card flat" style="margin-top:16px"><div class="row between"><div><b>Pedir um serviço</b><div class="muted small">A plataforma procura profissionais disponíveis para você.</div></div>' +
       '<button class="btn sm" onclick="App.caçaCliente()">Solicitar</button></div></div>';
   }
@@ -459,12 +544,26 @@
     var bloqueado = db.config.caca !== 'todos';
     return '<h2>Meus pedidos</h2>' +
       (bloqueado ? '<div class="hintbox">O caça profissional está em <b>teste interno</b>. Por enquanto só a Central cria solicitações. Em breve liberamos para todos.</div>' : '') +
-      '<div class="sec-title">Solicitações</div>' +
       (reqs.length ? reqs.map(function (r) {
-        var p = r.escolhidoId ? findUser(r.escolhidoId) : null;
-        return '<div class="card tight"><div class="row between"><b>' + esc(r.profissao || r.categoria) + '</b><span class="chip ' + (r.status === 'concluida' ? 'gray' : r.status === 'aberta' ? 'gold' : 'green') + '">' + esc(r.status) + '</span></div>' +
-          '<div class="muted small">' + esc(r.descricao) + '</div>' +
-          '<div class="muted small" style="margin-top:6px">' + dtbr(r.criadoEm) + ' · ' + (r.propostas || []).length + ' orçamento(s)' + (p ? ' · escolhido: <b>' + esc(p.nome) + '</b>' : '') + '</div></div>';
+        var props = r.propostas || [];
+        var escolhido = r.escolhidoId ? findUser(r.escolhidoId) : null;
+        return '<div class="card tight">' +
+          '<div class="row between"><div><b>' + esc(r.profissao || r.area || 'Pedido') + '</b>' +
+            '<div class="muted small">Pedido #' + (r.numero || '') + ' · ' + tempoRel(r.criadoEm) + '</div></div>' +
+            '<span class="chip ' + (r.status === 'concluida' ? 'gray' : r.status === 'aberta' ? 'gold' : 'green') + '">' + esc(r.status.replace('_', ' ')) + '</span></div>' +
+          '<div class="small" style="margin:6px 0">' + esc(r.descricao) + '</div>' +
+          '<div class="muted small">' + esc(r.endereco || '—') + '</div>' +
+          (escolhido ? '<div class="chip green" style="margin-top:8px">✔ ' + esc(escolhido.nome) + ' escolhido</div>' : '') +
+          (props.length ? '<hr class="dash">' + '<div class="sec-title" style="margin:0 0 6px">Orçamentos recebidos</div>' +
+            props.map(function (pr) {
+              var p = findUser(pr.profId);
+              return '<div class="row between" style="padding:7px 0;border-bottom:1px dashed var(--linha)">' +
+                '<div><b class="small">' + esc(p ? p.nome : '—') + '</b>' +
+                '<div class="muted small">' + (pr.obs ? esc(pr.obs) : 'sem observação') + '</div></div>' +
+                '<div class="row" style="gap:6px"><b style="font-size:13px">' + money(pr.valor) + '</b>' +
+                (r.escolhidoId ? '' : '<button class="btn xs" onclick="App.escolher(\'' + r.id + '\',\'' + pr.profId + '\')">aceitar</button>') + '</div></div>';
+            }).join('') : '<div class="muted small" style="margin-top:6px">Aguardando orçamentos…</div>') +
+          '</div>';
       }).join('') : '<div class="empty"><span class="big">📋</span>Você ainda não tem pedidos.</div>');
   }
 
@@ -498,7 +597,7 @@
     return topbar(u) + '<div class="wrap">' + content + '</div>' + footer() +
       tabbar([
         { id: 'inicio', ic: '🏠', label: 'Início' },
-        { id: 'caca', ic: '📡', label: 'Caça' },
+        { id: 'caca', ic: '📡', label: 'Caça', badge: badgeCacaPro(u) },
         { id: 'clientes', ic: '👥', label: 'Clientes' },
         { id: 'os', ic: '🧾', label: 'OS' },
         { id: 'perfil', ic: '👤', label: 'Perfil' }
@@ -541,26 +640,33 @@
     var meus = db.requests.filter(function (r) {
       return (r.atribuidos || []).indexOf(u.id) >= 0 && r.status !== 'concluida';
     }).sort(function (a, b) { return (b.criadoEm || '').localeCompare(a.criadoEm || ''); });
-    var jaTem = {};
-    meus.forEach(function (r) { (r.propostas || []).forEach(function (p) { if (p.profId === u.id) jaTem[r.id] = true; }); });
     return '<h2>Caça profissional</h2>' +
       '<div class="hintbox ' + (db.config.caca === 'admin' ? '' : 'info') + '">' +
         (db.config.caca === 'admin'
           ? 'Modo teste: só a Central cria solicitações. Os pedidos aparecem aqui quando a Central distribui para você.'
           : 'Modo aberto: clientes também podem solicitar serviços.') + '</div>' +
-      '<div class="sec-title">Pedidos para você · ' + meus.length + '</div>' +
+      '<div class="row between" style="margin:14px 2px 6px"><b style="font-size:13px">Pedidos para você · ' + meus.length + '</b>' +
+        '<button class="btn xs ghost" onclick="App.toggleOnline()">' + (isOnline(u.id) ? '● Online' : '○ Ficar online') + '</button></div>' +
       (u.status !== 'aprovado' ? '<div class="hintbox warn">Aguarde a aprovação da Central para receber pedidos.</div>' : '') +
       (meus.length ? meus.map(function (r) {
-        var dono = r.propostas && r.propostas.filter(function (p) { return p.profId === u.id; })[0];
+        var meu = (r.propostas || []).filter(function (p) { return p.profId === u.id; })[0];
+        var urgente = /rápido|hoje/i.test(r.urgencia || '');
         return '<div class="card tight">' +
-          '<div class="row between"><b>' + esc(r.profissao || r.categoria) + '</b><span class="chip ' + (r.status === 'aberta' ? 'gold' : 'green') + '">' + esc(r.status) + '</span></div>' +
-          '<div class="small" style="margin:6px 0">' + esc(r.descricao) + '</div>' +
-          '<div class="muted small">' + esc(r.urgencia || '') + ' · ' + esc(r.endereco || 'endereço no aceite') + ' · ' + dtbr(r.criadoEm) + '</div>' +
-          (dono ? '<div class="chip gold" style="margin-top:8px">seu orçamento: ' + money(dono.valor) + '</div>'
-            : '<button class="btn sm" style="margin-top:10px" onclick="App.orcamento(\'' + r.id + '\')">Aceitar e enviar orçamento</button>') +
+          '<div class="row between"><div class="row" style="gap:6px;flex-wrap:wrap"><b>' + esc(r.profissao || r.area || 'Serviço') + '</b>' +
+            '<span class="urgencia">' + esc(r.urgencia || 'a combinar') + '</span></div>' +
+            '<span class="chip ' + (r.status === 'aberta' ? 'gold' : 'green') + '">' + esc(r.status.replace('_', ' ')) + '</span></div>' +
+          '<div class="small" style="margin:7px 0">' + esc(r.descricao) + '</div>' +
+          '<div class="muted small">📍 ' + esc(r.endereco || 'endereço liberado no aceite') + ' · ⏱ ' + tempoRel(r.criadoEm) + '</div>' +
+          (urgente ? '' : '') +
+          '<div class="muted small" style="margin-top:5px">Pedido #' + (r.numero || '') + '</div>' +
+          (meu ? '<div class="row between" style="margin-top:9px"><span class="chip gold">seu orçamento: ' + money(meu.valor) + '</span>' +
+              (r.escolhidoId === u.id ? '<span class="chip green">✔ você foi escolhido</span>' : '<span class="muted small">aguardando o cliente</span>') + '</div>'
+            : '<div class="row" style="gap:6px;margin-top:10px"><button class="btn sm" onclick="App.orcamento(\'' + r.id + '\')">Aceitar e enviar orçamento</button>' +
+              '<button class="btn sm ghost" onclick="App.recusarPedido(\'' + r.id + '\')">Recusar</button></div>') +
+          (r.status !== 'concluida' ? '<div class="muted small" style="margin-top:8px">' + timeline(r) + '</div>' : '') +
           '</div>';
-      }).join('') : '<div class="empty"><span class="big">📡</span>Nenhum pedido no momento.</div>') +
-      '<div class="card flat" style="margin-top:10px"><div class="muted small">O caça profissional está disponível neste Painel 2. A Central acompanha cada pedido, os orçamentos e a escolha do cliente.</div></div>';
+      }).join('') : '<div class="empty"><span class="big">📡</span>Nenhum pedido no momento.<br><span class="small">Fique online para ser escolhido primeiro.</span></div>') +
+      '<div class="card flat" style="margin-top:10px"><div class="muted small">O caça profissional vive neste Painel 2. A Central acompanha cada pedido, os orçamentos e a escolha do cliente.</div></div>';
   }
 
   function listaClientes() {
@@ -682,7 +788,7 @@
         { id: 'dash', ic: '📊', label: 'Central' },
         { id: 'prof', ic: '🧑‍🔧', label: 'Profissionais' },
         { id: 'cert', ic: '🎖', label: 'Selos' },
-        { id: 'caca', ic: '📡', label: 'Caça' },
+        { id: 'caca', ic: '📡', label: 'Caça', badge: db.requests.filter(function (r) { return r.status !== 'concluida'; }).length },
         { id: 'config', ic: '⚙️', label: 'Ajustes' }
       ], tab);
   }
@@ -781,10 +887,16 @@
   function masterCaca() {
     var reqs = db.requests.slice().sort(function (a, b) { return (b.criadoEm || '').localeCompare(a.criadoEm || ''); });
     var cats = Object.keys(AREAS).map(function (a) { return '<option>' + esc(a) + '</option>'; }).join('');
+    var abertos = reqs.filter(function (r) { return r.status !== 'concluida'; }).length;
     return '<h2>Caça profissional</h2>' +
       '<div class="hintbox ' + (db.config.caca === 'admin' ? '' : 'info') + '">' +
         'Modo atual: <b>' + (db.config.caca === 'admin' ? 'teste interno — só a Central cria pedidos' : 'aberto para clientes') + '</b>. ' +
-        'O pedido é distribuído para até 5 profissionais da área (online primeiro).</div>' +
+        'O pedido é distribuído para até 5 profissionais da área (online primeiro) e pode ser ampliado.</div>' +
+      '<div class="grid g3">' +
+        '<div class="stat"><b style="font-size:20px">' + abertos + '</b><span>em andamento</span></div>' +
+        '<div class="stat"><b style="font-size:20px">' + db.requests.reduce(function (s, r) { return s + (r.propostas || []).length; }, 0) + '</b><span>orçamentos</span></div>' +
+        '<div class="stat"><b style="font-size:20px">' + reqs.filter(function (r) { return r.status === 'concluida'; }).length + '</b><span>concluídos</span></div>' +
+      '</div>' +
       '<form class="card" onsubmit="App.criarPedido(event)">' +
         '<h3>Novo pedido de teste</h3>' +
         '<div class="field"><label>Cliente</label><select name="clienteId"><option value="">— sem cadastro (avulso) —</option>' +
@@ -800,18 +912,28 @@
       '<div class="sec-title">Pedidos · ' + reqs.length + '</div>' +
       (reqs.length ? reqs.map(function (r) {
         var atrib = (r.atribuidos || []).map(findUser).filter(Boolean);
+        var props = r.propostas || [];
         return '<div class="card tight">' +
-          '<div class="row between"><b>' + esc(r.profissao || r.area || 'Pedido') + '</b>' +
-          '<span class="chip ' + (r.status === 'concluida' ? 'gray' : r.status === 'aberta' ? 'gold' : 'green') + '">' + esc(r.status) + '</span></div>' +
-          '<div class="small" style="margin:5px 0">' + esc(r.descricao) + '</div>' +
-          '<div class="muted small">' + esc(r.clienteNome || 'Cliente') + ' · ' + esc(r.endereco || '—') + ' · ' + dtbr(r.criadoEm) + '</div>' +
-          '<div class="muted small" style="margin-top:6px">Enviado para: ' + (atrib.length ? atrib.map(function (p) { return esc(p.nome.split(' ')[0]); }).join(', ') : 'nenhum profissional da área') + '</div>' +
-          ((r.propostas || []).length ? '<hr class="dash">' + r.propostas.map(function (pr) {
+          '<div class="row between"><div><b>' + esc(r.profissao || r.area || 'Pedido') + '</b>' +
+            '<div class="muted small">#' + (r.numero || '') + ' · ' + tempoRel(r.criadoEm) + ' · ' + esc(r.urgencia || '') + '</div></div>' +
+            '<span class="chip ' + (r.status === 'concluida' ? 'gray' : r.status === 'aberta' ? 'gold' : 'green') + '">' + esc(r.status.replace('_', ' ')) + '</span></div>' +
+          '<div class="small" style="margin:6px 0">' + esc(r.descricao) + '</div>' +
+          '<div class="muted small">👤 ' + esc(r.clienteNome || 'Cliente') + ' · 📍 ' + esc(r.endereco || '—') + '</div>' +
+          '<div class="sec-title" style="margin:12px 0 4px">Distribuição · ' + atrib.length + '</div>' +
+          (atrib.length ? atrib.map(function (p) {
+            var cotou = props.filter(function (x) { return x.profId === p.id; })[0];
+            return '<div class="row between" style="padding:5px 0;font-size:12.5px">' +
+              '<span>' + esc(p.nome.split(' ')[0]) + (isOnline(p.id) ? ' <span class="dot"></span>' : '') + '</span>' +
+              (cotou ? '<span class="chip gold">' + money(cotou.valor) + '</span>' : '<span class="chip gray">aguardando</span>') + '</div>';
+          }).join('') : '<div class="muted small">Nenhum profissional da área aprovado.</div>') +
+          timeline(r) +
+          (props.length ? '<hr class="dash">' + props.map(function (pr) {
             var p = findUser(pr.profId);
-            return '<div class="row between" style="font-size:13px"><span>' + esc(p ? p.nome : '—') + (pr.obs ? ' · <span class="muted small">' + esc(pr.obs) + '</span>' : '') + '</span>' +
+            return '<div class="row between" style="font-size:13px;padding:4px 0"><span>' + esc(p ? p.nome : '—') + (pr.obs ? ' · <span class="muted small">' + esc(pr.obs) + '</span>' : '') + '</span>' +
               '<span><b>' + money(pr.valor) + '</b> ' + (r.escolhidoId === pr.profId ? '<span class="chip green">escolhido</span>' : '<button class="btn xs ghost" onclick="App.escolher(\'' + r.id + '\',\'' + pr.profId + '\')">escolher</button>') + '</span></div>';
-          }).join('') : '<div class="muted small" style="margin-top:6px">Aguardando orçamentos…</div>') +
+          }).join('') : '') +
           '<div class="doc-actions">' +
+            (r.status !== 'concluida' ? '<button class="btn xs ghost" onclick="App.ampliar(\'' + r.id + '\')">➕ Ampliar busca</button>' : '') +
             (r.status !== 'concluida' ? '<button class="btn xs ghost" onclick="App.concluirPedido(\'' + r.id + '\')">Concluir</button>' : '') +
             '<button class="btn xs danger" onclick="App.excluirPedido(\'' + r.id + '\')">Remover</button>' +
           '</div></div>';
@@ -843,31 +965,63 @@
         '</div>' +
       '</div>' +
       '<div class="sec-title">Nuvem (opcional)</div>' +
-      '<div class="card tight"><div class="muted small">Para acessar de qualquer aparelho com os mesmos dados, informe a URL e a chave pública do Supabase em <b>config.js</b>. Sem isso, o app funciona 100% neste aparelho.</div>' +
-      '<div class="kv" style="margin-top:8px"><span>Status</span><span>' + (cloud.on() ? 'conectado' : 'local') + '</span></div></div>' +
+      '<div class="card tight">' +
+        '<div class="kv"><span>Projeto</span><span>' + esc((CFG.supabaseUrl || 'não configurado').replace('https://', '')) + '</span></div>' +
+        '<div class="kv"><span>Chave anon</span><span>' + (CFG.supabaseAnonKey ? 'informada' : 'faltando') + '</span></div>' +
+        '<div class="kv"><span>Status</span><span>' + (cloud.on() ? 'sincronização ativa' : 'somente este aparelho') + '</span></div>' +
+        '<div class="muted small" style="margin-top:8px">Com a URL e a chave anon no <b>config.js</b>, cadastros, pedidos e o "online agora" passam a valer em qualquer aparelho.</div>' +
+        '<button class="btn sm ghost" style="margin-top:10px" onclick="App.testarNuvem()">Testar conexão</button></div>' +
       '<div class="sec-title">Sobre</div>' +
       '<div class="card tight center"><div class="muted small">' + esc(db.config.marca) + ' · v1.0<br>' + esc(db.config.igreja) + '<br>by Elton · Sistema e Logística</div></div>';
   }
 
   /* ---------------- documentos ---------------- */
-  var DOC_CSS = '@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#16211d;margin:0}' +
-    '.dh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0e5c44;padding-bottom:10px;margin-bottom:16px}' +
-    '.dl{font-size:19px;font-weight:800;color:#0e5c44;letter-spacing:-.3px}.ds{font-size:10px;letter-spacing:2px;color:#6c7a74;text-transform:uppercase}' +
-    '.dn{text-align:right;font-size:10px;color:#6c7a74;line-height:1.6}.dn b{font-size:14px;color:#16211d}' +
-    'h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;color:#0e5c44;margin:16px 0 8px}' +
-    '.box{border:1px solid #e4e0d4;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.6}' +
-    '.two{display:flex;gap:12px}.two>div{flex:1}' +
-    '.lbl{font-size:10px;color:#6c7a74;text-transform:uppercase;letter-spacing:.6px}' +
-    'table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}th,td{padding:7px 8px;border-bottom:1px solid #eee;text-align:left}th{background:#f6f4ee;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px}' +
-    '.tot{text-align:right;font-size:18px;font-weight:800;margin-top:12px;color:#0e5c44}' +
-    '.assin{margin-top:42px;display:flex;gap:30px}.assin div{flex:1;border-top:1px solid #999;padding-top:5px;font-size:10.5px;text-align:center;color:#6c7a74}' +
-    '.ft{margin-top:34px;border-top:1px solid #e4e0d4;padding-top:8px;font-size:9px;color:#9aa8a2;text-align:center;letter-spacing:.6px}' +
-    '.card-print{width:85mm;height:54mm;border-radius:4mm;background:linear-gradient(140deg,#0e5c44,#0a3c2c 60%,#0d4c38);color:#fff;padding:5mm;position:relative;overflow:hidden}' +
-    '.card-print .ct{font-size:6pt;letter-spacing:2px;text-transform:uppercase;color:#cbb98d}.card-print .cn{font-size:11pt;font-weight:800}' +
-    '.card-print .cf{display:flex;gap:3mm;margin-top:3mm}.card-print img,.card-print .ph{width:14mm;height:14mm;border-radius:2mm;object-fit:cover;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-weight:800}' +
-    '.card-print .cp{font-size:9pt;font-weight:800;text-transform:uppercase}.card-print .cs{font-size:6.5pt;color:#bcd3c7;margin-top:.6mm}' +
-    '.card-print .cbot{position:absolute;left:5mm;right:5mm;bottom:3.5mm;display:flex;justify-content:space-between;font-size:5.5pt;color:#a9c3b6;letter-spacing:.4px}' +
-    '.card-print .cbot b{color:#e5d3a6;font-size:5.5pt;letter-spacing:1px}';
+  var DOC_CSS = '@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:"Helvetica Neue",Arial,sans-serif;color:#16211d;margin:0;font-size:11.5px;line-height:1.5}' +
+    '.doc-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:12px;border-bottom:2px solid #0e5c44}' +
+    '.doc-brand{display:flex;gap:10px;align-items:center}' +
+    '.doc-mark{width:44px;height:44px;border-radius:12px;background:#0e5c44;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;letter-spacing:.5px}' +
+    '.doc-name{font-size:18px;font-weight:800;color:#0e5c44;line-height:1.1;letter-spacing:-.3px}' +
+    '.doc-church{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#6c7a74;margin-top:2px}' +
+    '.doc-id{text-align:right}' +
+    '.doc-kind{font-size:8.5px;letter-spacing:2px;color:#6c7a74;text-transform:uppercase}' +
+    '.doc-num{font-size:16px;font-weight:800;letter-spacing:-.3px}' +
+    '.doc-date{font-size:9px;color:#6c7a74}' +
+    'h2{font-size:8.5px;letter-spacing:1.6px;text-transform:uppercase;color:#0e5c44;margin:14px 0 5px;font-weight:800}' +
+    '.box{border:1px solid #e4e0d4;border-radius:8px;padding:9px 11px;font-size:10.5px;line-height:1.6;background:#fcfbf7}' +
+    '.box b{font-size:11.5px}' +
+    '.two{display:flex;gap:10px}.two>div{flex:1}' +
+    'table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:2px}' +
+    'th{background:#f3f0e7;font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#55635d;text-align:left;padding:7px 8px}' +
+    'td{padding:8px;border-bottom:1px solid #ece8dc;vertical-align:top}' +
+    '.tot{display:flex;justify-content:flex-end;gap:14px;align-items:baseline;margin-top:8px;border-top:1px solid #e4e0d4;padding-top:8px}' +
+    '.tot span{font-size:8px;letter-spacing:1.4px;color:#6c7a74;text-transform:uppercase}' +
+    '.tot b{font-size:19px;color:#0e5c44;letter-spacing:-.5px}' +
+    '.ext{font-size:8.5px;color:#6c7a74;text-align:right;margin-top:2px;font-style:italic}' +
+    '.pill{display:inline-block;font-size:7.5px;letter-spacing:1.2px;padding:2px 7px;border-radius:99px;border:1px solid #d8d2c2;text-transform:uppercase;color:#6c7a74}' +
+    '.assin{margin-top:40px;display:flex;gap:40px}' +
+    '.assin>div{flex:1;border-top:1px solid #9aa8a2;padding-top:6px;font-size:9px;text-align:center;color:#6c7a74}' +
+    '.ft{margin-top:26px;border-top:1px solid #e4e0d4;padding-top:7px;display:flex;justify-content:space-between;gap:10px;font-size:7px;color:#9aa8a2;letter-spacing:.7px}' +
+    '.cards{display:flex;flex-wrap:wrap;gap:4mm}' +
+    '.card-print{width:85mm;height:54mm;border-radius:3.5mm;background:linear-gradient(140deg,#0e5c44,#0a3c2c 60%,#0d4c38);color:#fff;padding:5mm;position:relative;overflow:hidden}' +
+    '.card-print::after{content:"";position:absolute;right:-12mm;bottom:-18mm;width:44mm;height:44mm;border-radius:50%;border:6mm solid rgba(191,155,82,.2)}' +
+    '.card-print .ct{font-size:5.5pt;letter-spacing:2px;text-transform:uppercase;color:#cbb98d;position:relative;z-index:2}' +
+    '.card-print .cn{font-size:11pt;font-weight:800;letter-spacing:-.2px;position:relative;z-index:2}' +
+    '.card-print .cf{display:flex;gap:3mm;margin-top:3mm;position:relative;z-index:2}' +
+    '.card-print img,.card-print .ph{width:14mm;height:14mm;border-radius:2mm;object-fit:cover;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11pt}' +
+    '.card-print .cp{font-size:8.5pt;font-weight:800;text-transform:uppercase;line-height:1.2}' +
+    '.card-print .cs{font-size:6pt;color:#bcd3c7;margin-top:.6mm;line-height:1.35}' +
+    '.card-print .cbot{position:absolute;left:5mm;right:5mm;bottom:3.2mm;display:flex;justify-content:space-between;gap:4mm;font-size:5pt;color:#a9c3b6;letter-spacing:.4px;z-index:2}' +
+    '.card-print .cbot b{color:#e5d3a6;letter-spacing:1px;white-space:nowrap}' +
+    '.card-print.verso{background:#fff;color:#16211d;border:1px solid #d8d2c2;display:flex;flex-direction:column}' +
+    '.card-print.verso::after{border-color:rgba(14,92,68,.07)}' +
+    '.verso .vt{font-size:6pt;letter-spacing:2px;text-transform:uppercase;color:#0e5c44;font-weight:800}' +
+    '.verso .vv{font-size:7.5pt;color:#6c7a74;margin-top:1mm;border-bottom:1px solid #e4e0d4;padding-bottom:2mm}' +
+    '.verso .vgrid{display:flex;flex-wrap:wrap;gap:2mm 5mm;margin-top:2.5mm;position:relative;z-index:2}' +
+    '.verso .vgrid>div{width:calc(50% - 5mm)}' +
+    '.verso .vgrid span{display:block;font-size:4.6pt;letter-spacing:1px;text-transform:uppercase;color:#9aa8a2}' +
+    '.verso .vgrid b{font-size:7pt;line-height:1.25}' +
+    '.verso .vfoot{position:absolute;left:5mm;right:5mm;bottom:3mm;font-size:4.6pt;color:#8b978f;line-height:1.5;z-index:2}' +
+    '.verso .vfoot b{color:#0e5c44;letter-spacing:1px}';
 
   function printDoc(html) {
     var f = document.createElement('iframe');
@@ -882,42 +1036,85 @@
     setTimeout(function () { f.remove(); }, 60000);
   }
   function docHeader(titulo, numero, data) {
-    return '<div class="dh"><div><div class="dl">' + esc(db.config.marca || 'Conecta Irmãos') + '</div>' +
-      '<div class="ds">' + esc(db.config.igreja || 'Igreja Presença de Deus') + '</div></div>' +
-      '<div class="dn">' + esc(titulo) + '<br><b>' + esc(numero) + '</b><br>' + esc(data) + '</div></div>';
+    return '<div class="doc-head"><div class="doc-brand"><div class="doc-mark">CI</div><div>' +
+      '<div class="doc-name">' + esc(db.config.marca || 'Conecta Irmãos') + '</div>' +
+      '<div class="doc-church">' + esc(db.config.igreja || 'Igreja Presença de Deus') + '</div></div></div>' +
+      '<div class="doc-id"><div class="doc-kind">' + esc(titulo) + '</div>' +
+      '<div class="doc-num">' + esc(numero) + '</div><div class="doc-date">' + esc(data) + '</div></div></div>';
   }
-  function docFooter() {
-    return '<div class="ft">' + esc(db.config.marca || 'Conecta Irmãos') + ' · ' + esc(db.config.igreja || 'Igreja Presença de Deus') + '<br>BY ELTON · SISTEMA E LOGÍSTICA</div>';
+  function docFooter(extra) {
+    return '<div class="ft"><span>' + esc(db.config.igreja || 'Igreja Presença de Deus') + ' · ' + esc(db.config.marca || 'Conecta Irmãos') + '</span>' +
+      '<span>' + esc(extra || '') + '</span><span>BY ELTON · SISTEMA E LOGÍSTICA</span></div>';
   }
   function docOS(o) {
     var p = findUser(o.profId) || {};
-    return docHeader('Ordem de Serviço', 'OS-' + String(o.numero).padStart(4, '0'), dbr(o.criadoEm)) +
-      '<h2>Prestador</h2><div class="box"><b>' + esc(p.nome || '—') + '</b><br>' +
-      esc(p.profissao || '') + ' · ' + esc(p.whats || '') + (p.cnpj ? '<br>CNPJ ' + esc(p.cnpj) : '') + '</div>' +
-      '<h2>Cliente</h2><div class="box"><b>' + esc(o.clienteNome) + '</b><br>' + (o.clienteCpf ? 'CPF ' + esc(o.clienteCpf) + '<br>' : '') +
-      esc(o.clienteWhats || '') + (o.clienteEndereco ? '<br>' + esc(o.clienteEndereco) : '') + '</div>' +
-      '<h2>Serviço</h2><div class="box">' + esc(o.servico).replace(/\n/g, '<br>') + '</div>' +
-      '<table><tr><th>Descrição</th><th style="text-align:right">Valor</th></tr>' +
-      '<tr><td>Serviço prestado</td><td style="text-align:right">' + money(o.valor) + '</td></tr></table>' +
-      '<div class="tot">Total: ' + money(o.valor) + '</div>' +
-      '<div class="two" style="margin-top:14px"><div class="box"><span class="lbl">Pagamento</span><br>' + esc(o.pagamento || 'a combinar') + ' · ' + (o.pago ? 'PAGO' : 'EM ABERTO') + '</div>' +
-      '<div class="box"><span class="lbl">Observações</span><br>' + esc(o.obs || '—') + '</div></div>' +
-      '<div class="assin"><div>' + esc(p.nome || 'Prestador') + '<br>Prestador</div><div>' + esc(o.clienteNome) + '<br>Cliente</div></div>' +
-      docFooter();
+    var num = 'OS-' + String(o.numero).padStart(4, '0');
+    return '<div class="doc">' +
+      docHeader('Ordem de Serviço', num, 'Emitida em ' + dbr(o.criadoEm)) +
+      '<div class="two" style="margin-top:14px">' +
+        '<div><h2>Prestador de serviço</h2><div class="box"><b>' + esc(p.nome || '—') + '</b><br>' +
+          esc(p.profissao || '') + (p.apelido ? ' · ' + esc(p.apelido) : '') + '<br>' +
+          (p.whats ? 'WhatsApp ' + esc(p.whats) + '<br>' : '') +
+          (p.cnpj ? 'CNPJ ' + esc(p.cnpj) : (p.cpf ? 'CPF ' + esc(p.cpf) : '')) +
+          (p.atende ? '<br>Atende: ' + esc(p.atende) : '') + '</div></div>' +
+        '<div><h2>Cliente</h2><div class="box"><b>' + esc(o.clienteNome) + '</b><br>' +
+          (o.clienteCpf ? 'CPF ' + esc(o.clienteCpf) + '<br>' : '') +
+          (o.clienteWhats ? esc(o.clienteWhats) + '<br>' : '') +
+          (o.clienteEndereco ? esc(o.clienteEndereco) : '') + '</div></div>' +
+      '</div>' +
+      '<h2>Objeto do serviço</h2>' +
+      '<table><tr><th style="width:74%">Descrição</th><th style="text-align:right">Valor</th></tr>' +
+        '<tr><td>' + esc(o.servico).replace(/\n/g, '<br>') + '</td><td style="text-align:right">' + money(o.valor) + '</td></tr></table>' +
+      '<div class="tot"><span>Total</span><b>' + money(o.valor) + '</b></div>' +
+      '<div class="ext">(' + extenso(o.valor) + ')</div>' +
+      '<div class="two" style="margin-top:14px">' +
+        '<div><h2>Pagamento</h2><div class="box">' + esc(o.pagamento || 'A combinar') + '<br>' +
+          '<span class="pill">' + (o.pago ? 'pago em ' + dbr(o.pagoEm || o.criadoEm) : 'em aberto') + '</span></div></div>' +
+        '<div><h2>Observações</h2><div class="box">' + esc(o.obs || '—') + '</div></div>' +
+      '</div>' +
+      '<div class="assin"><div>' + esc(p.nome || 'Prestador') + '<br>Prestador de serviço</div><div>' + esc(o.clienteNome) + '<br>Cliente</div></div>' +
+      docFooter('Validação ' + num) +
+      '</div>';
   }
   function docRecibo(o) {
     var p = findUser(o.profId) || {};
-    return docHeader('Recibo de Pagamento', 'REC-' + String(o.numero).padStart(4, '0'), dbr(o.pagoEm || o.criadoEm)) +
-      '<div class="box" style="font-size:14px;line-height:1.9;padding:20px">' +
-      'Recebi(emos) de <b>' + esc(o.clienteNome) + '</b>' + (o.clienteCpf ? ', CPF ' + esc(o.clienteCpf) : '') +
-      ' a importância de <b>' + money(o.valor) + '</b> referente a <b>' + esc(o.servico) + '</b>.<br>' +
-      'Para clareza, firmo o presente recibo dando plena e total quitação do valor acima. ' +
-      (p.cnpj ? '<br><br>Emitido por <b>' + esc(p.nome) + '</b> · CNPJ ' + esc(p.cnpj) + '.' : '<br><br>Emitido por <b>' + esc(p.nome) + '</b>.') +
+    var num = 'REC-' + String(o.numero).padStart(4, '0');
+    return '<div class="doc">' +
+      docHeader('Recibo de Pagamento', num, dbr(o.pagoEm || o.criadoEm)) +
+      '<h2 style="margin-top:22px">Quitação</h2>' +
+      '<div class="box" style="font-size:11.5px;line-height:2;padding:16px 18px">' +
+        'Recebi de <b>' + esc(o.clienteNome) + '</b>' + (o.clienteCpf ? ', CPF ' + esc(o.clienteCpf) : '') +
+        ', a importância de <b>' + money(o.valor) + '</b> <span style="color:#6c7a74">(' + extenso(o.valor) + ')</span>, ' +
+        'referente a <b>' + esc(o.servico) + '</b>.' +
+        '<br><br>Para clareza, firmo o presente recibo dando plena e total quitação do valor acima.' +
+        '<br><br>Emitido por <b>' + esc(p.nome || '—') + '</b>' +
+        (p.cnpj ? ' · CNPJ ' + esc(p.cnpj) : (p.cpf ? ' · CPF ' + esc(p.cpf) : '')) +
+        (p.whats ? ' · ' + esc(p.whats) : '') + '.' +
       '</div>' +
-      '<div class="tot">Valor: ' + money(o.valor) + '</div>' +
-      '<div class="box" style="margin-top:14px"><span class="lbl">Forma de pagamento</span><br>' + esc(o.pagamento || 'a combinar') + '</div>' +
+      '<div class="tot"><span>Valor pago</span><b>' + money(o.valor) + '</b></div>' +
+      '<div class="two" style="margin-top:14px">' +
+        '<div><h2>Forma de pagamento</h2><div class="box">' + esc(o.pagamento || 'A combinar') + '</div></div>' +
+        '<div><h2>Referência</h2><div class="box">Ordem de serviço OS-' + String(o.numero).padStart(4, '0') + '</div></div>' +
+      '</div>' +
       '<div class="assin"><div>' + esc(p.nome || 'Prestador') + '<br>Emissor</div><div>____/____/______<br>Data</div></div>' +
-      docFooter();
+      docFooter('Validação ' + num) +
+      '</div>';
+  }
+  function carteiraVerso(u) {
+    var validade = '31/12/' + (new Date().getFullYear() + 1);
+    var val = 'CI-' + digits(u.cnpj || '').slice(-4) + '-' + String(u.id).slice(-4).toUpperCase();
+    return '<div class="card-print verso">' +
+      '<div class="vt">' + esc(db.config.marca || 'Conecta Irmãos') + '</div>' +
+      '<div class="vv">Carteira de identificação profissional</div>' +
+      '<div class="vgrid">' +
+        '<div><span>Profissional</span><b>' + esc(u.nome) + '</b></div>' +
+        '<div><span>Atuação</span><b>' + esc(u.profissao || '—') + '</b></div>' +
+        '<div><span>CNPJ</span><b>' + esc(u.cnpj || '—') + '</b></div>' +
+        '<div><span>Validade</span><b>' + validade + '</b></div>' +
+      '</div>' +
+      '<div class="vfoot">' + esc(db.config.igreja || '') + ' · certificação aprovada pela administração.<br>' +
+        'Documento de identificação comunitária, sem valor fiscal. <b>' + esc(val) + '</b></div>' +
+      '</div>';
   }
 
   /* ---------------- ações ---------------- */
@@ -1120,7 +1317,7 @@
     },
     printCarteira: function () {
       var u = me(); if (!u) return;
-      printDoc('<div style="padding:10mm 0"><div class="card-print">' + carteiraInner(u) + '</div></div>');
+      printDoc('<div class="cards"><div class="card-print">' + carteiraInner(u) + '</div>' + carteiraVerso(u) + '</div>');
     },
 
     /* caça */
@@ -1166,7 +1363,9 @@
         descricao: String(fd.get('descricao')), endereco: String(fd.get('endereco') || (cli && cli.endereco) || ''),
         urgencia: String(fd.get('urgencia') || ''), status: 'aberta',
         atribuidos: elegiveis.map(function (p) { return p.id; }), propostas: [],
-        criadoEm: new Date().toISOString(), origem: origem || 'central'
+        criadoEm: new Date().toISOString(), origem: origem || 'central',
+        historico: [{ em: new Date().toISOString(), texto: 'Pedido criado e enviado para ' + elegiveis.length + ' profissional(is)' }],
+        vistos: {}
       };
       db.config.seqReq = (db.config.seqReq || 1) + 1;
       persistObj(db.requests, r, 'ci_requests');
@@ -1191,6 +1390,7 @@
       r.propostas = r.propostas || [];
       r.propostas.push({ profId: u.id, valor: valor, obs: String(fd.get('obs') || ''), em: new Date().toISOString() });
       r.status = 'com_orcamento';
+      (r.historico = r.historico || []).push({ em: new Date().toISOString(), texto: 'Orçamento de ' + money(valor) + ' de ' + String(u.nome).split(' ')[0] });
       persistObj(db.requests, r, 'ci_requests');
       closeModal();
       toast('Orçamento enviado.');
@@ -1199,6 +1399,8 @@
     escolher: function (rid, pid) {
       var r = db.requests.filter(function (x) { return x.id === rid; })[0]; if (!r) return;
       r.escolhidoId = pid; r.status = 'aceita';
+      var esc1 = findUser(pid);
+      (r.historico = r.historico || []).push({ em: new Date().toISOString(), texto: 'Cliente escolheu ' + (esc1 ? String(esc1.nome).split(' ')[0] : 'profissional') });
       persistObj(db.requests, r, 'ci_requests');
       toast('Profissional escolhido.');
       render();
@@ -1206,6 +1408,7 @@
     concluirPedido: function (id) {
       var r = db.requests.filter(function (x) { return x.id === id; })[0]; if (!r) return;
       r.status = 'concluida';
+      (r.historico = r.historico || []).push({ em: new Date().toISOString(), texto: 'Pedido concluído' });
       persistObj(db.requests, r, 'ci_requests');
       render();
     },
@@ -1333,6 +1536,47 @@
     }
   };
   window.App = App;
+
+  App.filtro = function (f) { S.filtro = f; render(); };
+
+  App.testarNuvem = function () {
+    if (!cloud.on()) { toast('Configure a URL e a chave anon em config.js.'); return; }
+    toast('Testando…');
+    fetch(cloud.base() + 'ci_users?select=id&limit=1', { headers: cloud.headers() })
+      .then(function (r) {
+        if (r.ok) toast('Conexão OK com o Supabase.');
+        else toast('Erro ' + r.status + ': verifique o schema e a chave.');
+      })
+      .catch(function () { toast('Sem conexão com o Supabase.'); });
+  };
+
+  App.ampliar = function (id) {
+    var r = db.requests.filter(function (x) { return x.id === id; })[0];
+    if (!r) return;
+    var ja = r.atribuidos || [];
+    var extras = pros().filter(function (p) {
+      if (p.status !== 'aprovado' || ja.indexOf(p.id) >= 0) return false;
+      if (r.profissao && norm(p.profissao) === norm(r.profissao)) return true;
+      if (r.area && areaOf(p) === r.area) return true;
+      return false;
+    }).slice(0, 5);
+    if (!extras.length) { toast('Não há mais profissionais dessa área para ampliar.'); return; }
+    r.atribuidos = ja.concat(extras.map(function (p) { return p.id; }));
+    (r.historico = r.historico || []).push({ em: new Date().toISOString(), texto: 'Busca ampliada para mais ' + extras.length + ' profissional(is)' });
+    persistObj(db.requests, r, 'ci_requests');
+    toast('Busca ampliada.');
+    render();
+  };
+
+  App.recusarPedido = function (id) {
+    var r = db.requests.filter(function (x) { return x.id === id; })[0];
+    if (!r || !session) return;
+    r.atribuidos = (r.atribuidos || []).filter(function (x) { return x !== session.uid; });
+    (r.historico = r.historico || []).push({ em: new Date().toISOString(), texto: 'Profissional recusou o pedido' });
+    persistObj(db.requests, r, 'ci_requests');
+    toast('Pedido recusado.');
+    render();
+  };
 
   /* ---------------- seed de exemplo ---------------- */
   function seed() {

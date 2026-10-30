@@ -1,8 +1,8 @@
 /* Configuração da plataforma
-   Deixe em branco para usar somente este aparelho (modo local).
-   Para sincronizar entre aparelhos, preencha com os dados do projeto Supabase
-   (Configurações do projeto > API). Use SEMPRE a chave "anon public". */
+   Sem a chave, o app funciona 100% no próprio aparelho (modo local).
+   Com URL + chave "anon public" do Supabase, os dados passam a ser
+   compartilhados entre todos os aparelhos (online agora, cadastros, OS). */
 window.CI_CONFIG = {
-  supabaseUrl: '',
+  supabaseUrl: 'https://sflfhokpqmrxljowctsf.supabase.co',
   supabaseAnonKey: ''
 };
