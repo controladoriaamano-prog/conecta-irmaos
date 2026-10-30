@@ -428,6 +428,71 @@
     if (!n) return '';
     return '<span class="stars">' + '★'.repeat(n) + '<span style="opacity:.25">' + '★'.repeat(5 - n) + '</span></span>';
   }
+  function clienteBuscar(u) {
+    var q = norm(S.q), filtro = S.filtro || 'todos';
+    var base = pros().filter(function (p) {
+      if (p.status !== 'aprovado') return false;
+      if (S.area && areaOf(p) !== S.area) return false;
+      if (!q) return true;
+      return norm([p.nome, p.apelido, p.profissao, p.faz, p.atende, p.area].join(' ')).indexOf(q) >= 0;
+    });
+    var list = base.filter(function (p) {
+      if (filtro === 'online') return isOnline(p.id);
+      if (filtro === 'verificados') return verified(p);
+      if (filtro === 'top') return Number(p.estrelas || 0) >= 4;
+      return true;
+    }).sort(function (a, b) {
+      return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0) || Number(b.estrelas || 0) - Number(a.estrelas || 0);
+    });
+    var total = pros().filter(function (p) { return p.status === 'aprovado'; }).length;
+    return '<div class="page-hero">' +
+        '<div class="row between" style="align-items:flex-start"><div><div class="hp-small">Bem-vindo</div>' +
+          '<b class="hp-name">' + esc((u.nome || '').split(' ')[0]) + '</b></div><div>' + logoSvg(42) + '</div></div>' +
+        '<div class="search-pill dark"><span>🔎</span><input id="busca" placeholder="Buscar serviço ou profissional…" value="' + esc(S.q) + '" oninput="App.search(this.value)"></div>' +
+        '<div class="hp-stats"><div><b>' + total + '</b><span>profissionais</span></div>' +
+          '<div><b>' + onlineCount() + '</b><span>online agora</span></div>' +
+          '<div><b>' + users().length + '</b><span>comunidade</span></div></div>' +
+      '</div>' +
+      '<div class="hero-card"><div class="hc-t">Profissionais da nossa igreja</div>' +
+        '<div class="hc-s">Aqui você encontra quem serve com confiança e propósito.</div>' +
+        '<button class="btn sm gold" style="width:auto;margin-top:10px" onclick="App.go(\'categorias\')">Ver categorias</button></div>' +
+      '<div class="row between" style="margin:16px 2px 10px"><b class="sec-inline">Categorias</b>' +
+        '<button class="btn xs link" onclick="App.go(\'categorias\')">ver todas</button></div>' +
+      '<div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px">' +
+        Object.keys(AREAS).slice(0, 6).map(function (a) {
+          return '<button class="cat-tile" style="background:linear-gradient(140deg,' + (CAT_COLOR[a] || '#7c8794') + ',' + (CAT_COLOR[a] || '#7c8794') + 'cc)" onclick="App.area(\'' + esc(a) + '\');App.go(\'buscar\')">' +
+            '<div class="ci">' + (AREA_ICON[a] || '📦') + '</div><div class="cl">' + esc(a) + '</div></button>';
+        }).join('') +
+      '</div>' +
+      '<div class="row between" style="margin:18px 2px 10px"><b class="sec-inline">' + (S.area ? esc(S.area) : 'Todos os profissionais') + ' · ' + list.length + '</b>' +
+        (S.area || S.q ? '<button class="btn xs link" onclick="App.area(\'\');App.search(\'\')">limpar</button>' : '') + '</div>' +
+      '<div class="filters">' + [['todos', 'Todos'], ['online', 'Online'], ['verificados', 'Verificados'], ['top', 'Melhores']].map(function (f) {
+        return '<button class="' + (filtro === f[0] ? 'on' : '') + '" onclick="App.filtro(\'' + f[0] + '\')">' + f[1] + '</button>';
+      }).join('') + '</div>' +
+      (list.length ? list.map(proCard).join('') : '<div class="empty"><span class="big">🔍</span>Nenhum profissional aqui.</div>');
+  }
+
+  function clienteCategorias() {
+    return '<div class="page-hero"><div class="row between"><div><div class="hp-small">Explorar</div>' +
+      '<b class="hp-name">Categorias</b></div><div>' + logoSvg(38) + '</div></div></div>' +
+      '<div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px">' +
+      Object.keys(AREAS).map(function (a) {
+        var n = pros().filter(function (p) { return p.status === 'aprovado' && areaOf(p) === a; }).length;
+        return '<button class="cat-big" style="background:linear-gradient(140deg,' + (CAT_COLOR[a] || '#7c8794') + ',' + (CAT_COLOR[a] || '#7c8794') + 'c4)" onclick="App.area(\'' + esc(a) + '\');App.go(\'buscar\')">' +
+          '<div class="ci">' + (AREA_ICON[a] || '📦') + '</div><div class="cb-t">' + esc(a) + '</div><div class="cb-n">' + n + ' profissional(is)</div></button>';
+      }).join('') + '</div>';
+  }
+
+  function clienteFavoritos() {
+    var f = [];
+    try { f = JSON.parse(localStorage.getItem('ci_favs') || '[]'); } catch (e) { f = []; }
+    var list = pros().filter(function (p) { return f.indexOf(p.id) >= 0 && p.status === 'aprovado'; });
+    return '<div class="page-hero"><div class="row between"><div><div class="hp-small">Seus</div>' +
+      '<b class="hp-name">Favoritos</b></div><div>' + logoSvg(38) + '</div></div></div>' +
+      (list.length ? list.map(proCard).join('')
+        : '<div class="empty"><span class="big">♡</span>Toque no coração de um profissional<br><span class="small">para salvar aqui.</span></div>');
+  }
+
   function proCard(p) {
     var fav = isFav(p.id);
     return '<div class="list-card">' + avatar(p, 'lg') +
@@ -552,61 +617,6 @@
         { id: 'favoritos', ic: '♡', label: 'Favoritos' },
         { id: 'perfil', ic: '👤', label: 'Perfil' }
       ], tab);
-  }
-
-  function clienteBuscar(u) {
-    var q = norm(S.q), filtro = S.filtro || 'todos';
-    var base = pros().filter(function (p) {
-      if (p.status !== 'aprovado') return false;
-      if (S.area && areaOf(p) !== S.area) return false;
-      if (!q) return true;
-      return norm([p.nome, p.apelido, p.profissao, p.faz, p.atende, p.area].join(' ')).indexOf(q) >= 0;
-    });
-    var list = base.filter(function (p) {
-      if (filtro === 'online') return isOnline(p.id);
-      if (filtro === 'verificados') return verified(p);
-      if (filtro === 'top') return Number(p.estrelas || 0) >= 4;
-      return true;
-    }).sort(function (a, b) {
-      return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0) || Number(b.estrelas || 0) - Number(a.estrelas || 0);
-    });
-    return '<div class="home-head"><div><div class="hh-small">Bem-vindo</div><b>' + esc((u.nome || '').split(' ')[0]) + '</b></div>' +
-      '<div class="row" style="gap:6px">' + logoSvg(34) + '</div></div>' +
-      '<div class="search-pill"><span>🔎</span><input id="busca" placeholder="Buscar por serviço ou profissional…" value="' + esc(S.q) + '" oninput="App.search(this.value)"></div>' +
-      '<div class="hero-mini"><div><b>Aqui você encontra profissionais da nossa igreja</b><span>com confiança e propósito.</span></div></div>' +
-      '<div class="row between" style="margin:16px 2px 10px"><b class="sec-inline">Categorias de Serviços</b>' +
-        '<button class="btn xs link" onclick="App.go(\'categorias\')">ver todas</button></div>' +
-      '<div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px">' +
-        Object.keys(AREAS).slice(0, 6).map(function (a) {
-          return '<button class="cat-tile" style="background:' + (CAT_COLOR[a] || '#7c8794') + '" onclick="App.area(\'' + esc(a) + '\');App.go(\'buscar\')">' +
-            '<div class="ci">' + (AREA_ICON[a] || '📦') + '</div><div class="cl">' + esc(a) + '</div></button>';
-        }).join('') +
-      '</div>' +
-      '<div class="row between" style="margin:18px 2px 10px"><b class="sec-inline">' + (S.area ? esc(S.area) : 'Profissionais') + ' · ' + list.length + '</b>' +
-        (S.area || S.q ? '<button class="btn xs link" onclick="App.area(\'\');App.search(\'\')">limpar</button>' : '') + '</div>' +
-      '<div class="filters">' + [['todos', 'Todos'], ['online', 'Online'], ['verificados', 'Verificados'], ['top', 'Melhores']].map(function (f) {
-        return '<button class="' + (filtro === f[0] ? 'on' : '') + '" onclick="App.filtro(\'' + f[0] + '\')">' + f[1] + '</button>';
-      }).join('') + '</div>' +
-      (list.length ? list.map(proCard).join('') : '<div class="empty"><span class="big">🔍</span>Nenhum profissional aqui.</div>');
-  }
-
-  function clienteCategorias() {
-    return '<div class="home-head"><div><div class="hh-small">Explorar</div><b>Categorias</b></div>' + logoSvg(34) + '</div>' +
-      '<div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px">' +
-      Object.keys(AREAS).map(function (a) {
-        var n = pros().filter(function (p) { return p.status === 'aprovado' && areaOf(p) === a; }).length;
-        return '<button class="cat-big" style="background:' + (CAT_COLOR[a] || '#7c8794') + '" onclick="App.area(\'' + esc(a) + '\');App.go(\'buscar\')">' +
-          '<div class="ci">' + (AREA_ICON[a] || '📦') + '</div><div class="cb-t">' + esc(a) + '</div><div class="cb-n">' + n + ' profissional(is)</div></button>';
-      }).join('') + '</div>';
-  }
-
-  function clienteFavoritos() {
-    var f = [];
-    try { f = JSON.parse(localStorage.getItem('ci_favs') || '[]'); } catch (e) { f = []; }
-    var list = pros().filter(function (p) { return f.indexOf(p.id) >= 0 && p.status === 'aprovado'; });
-    return '<div class="home-head"><div><div class="hh-small">Seus</div><b>Favoritos</b></div>' + logoSvg(34) + '</div>' +
-      (list.length ? '<div style="margin-top:12px">' + list.map(proCard).join('') + '</div>'
-        : '<div class="empty"><span class="big">♡</span>Toque no coração de um profissional<br><span class="small">para salvar aqui.</span></div>');
   }
 
   function perfilProSheet(p) {
@@ -872,6 +882,7 @@
     else if (tab === 'prof') content = masterProfs();
     else if (tab === 'cert') content = masterCerts();
     else if (tab === 'caca') content = masterCaca();
+    else if (tab === 'usuarios') content = masterUsuarios();
     else content = masterConfig();
     return '<div class="topbar"><div class="inner"><div class="mark">CI</div>' +
       '<div class="t"><b>Central · ' + esc(db.config.marca || 'Conecta Irmãos') + '</b><span>' + esc(db.config.igreja || '') + ' · painel 1</span></div>' +
@@ -892,38 +903,48 @@
     var pendCerts = pros().filter(function (p) { return p.certStatus === 'pendente'; });
     var onUsers = users().filter(function (u) { return isOnline(u.id); });
     var reqs = db.requests.filter(function (r) { return r.status !== 'concluida'; });
-    return '<h2>Visão geral</h2>' +
-      '<p class="muted small">Painel 1 · acesso gerencial e técnico. Os dois painéis usam a mesma base.</p>' +
-      '<div class="grid g2" style="grid-template-columns:1fr 1fr 1fr">' +
-        '<div class="stat"><b data-live="users">' + users().length + '</b><span>usuários ativos</span></div>' +
-        '<div class="stat"><b data-live="pros">' + pros().length + '</b><span>profissionais</span></div>' +
-        '<div class="stat"><b data-live="online" style="color:#22a06b">' + onlineCount() + '</b><span><span class="livedot"></span>online agora</span></div>' +
+    function menu(id, ic, t, s2, badge) {
+      return '<button class="menu-item" onclick="App.go(\'' + id + '\')">' +
+        '<span class="mi-ic">' + ic + '</span><span class="grow"><b>' + t + '</b><span>' + s2 + '</span></span>' +
+        (badge ? '<span class="chip gold">' + badge + '</span>' : '<span class="mi-ar">›</span>') + '</button>';
+    }
+    return '<div class="page-hero">' +
+        '<div class="row between" style="align-items:flex-start"><div><div class="hp-small">Painel 1 · administração</div>' +
+          '<b class="hp-name">Central</b></div><div>' + logoSvg(42) + '</div></div>' +
+        '<div class="hp-stats"><div><b>' + users().length + '</b><span>usuários</span></div>' +
+          '<div><b>' + totalPros + '</b><span>profissionais</span></div>' +
+          '<div><b style="color:#6ee7a8">' + onlineCount() + '</b><span>online agora</span></div></div>' +
       '</div>' +
-      '<div class="grid g3" style="margin-top:10px">' +
-        '<div class="stat"><b style="font-size:20px">' + pendPros.length + '</b><span>aprovações</span></div>' +
-        '<div class="stat"><b style="font-size:20px">' + reqs.length + '</b><span>pedidos abertos</span></div>' +
-        '<div class="stat"><b style="font-size:20px">' + db.orders.length + '</b><span>OS emitidas</span></div>' +
+      '<div class="sec-title" style="margin-top:2px">Governança</div>' +
+      '<div class="menu">' +
+        menu('prof', '🧑‍🔧', 'Gerenciar profissionais', 'Aprovar, bloquear, estrelas e cadastros', pendPros.length || '') +
+        menu('cert', '🎖', 'Certificações e selos', 'Cópias de cursos e diplomas', pendCerts.length || '') +
+        menu('caca', '📡', 'Solicitações de serviços', 'Caça profissional e orçamentos', reqs.length || '') +
+        menu('usuarios', '👥', 'Usuários', 'Clientes e profissionais cadastrados', '') +
+        menu('config', '⚙️', 'Relatórios e configurações', 'Backup, PIN e nuvem', '') +
       '</div>' +
       '<div class="sec-title">Quem está online</div>' +
       '<div class="card tight">' + (onUsers.length ? onUsers.map(function (u) {
         return '<div class="item">' + avatar(u, 'sm') + '<div class="grow"><div class="nm">' + esc(u.nome) + '</div>' +
           '<div class="sub">' + esc(u.tipo === 'profissional' ? (u.profissao || 'profissional') : 'cliente') + '</div></div>' +
           '<span class="chip green"><span class="livedot"></span>online</span></div>';
-      }).join('') : '<div class="empty">Ninguém conectado agora.</div>') + '</div>' +
-      '<div class="sec-title">Pendências</div>' +
-      '<div class="card tight">' +
-        '<div class="item"><div class="grow"><div class="nm">' + pendPros.length + ' cadastro(s) aguardando aprovação</div><div class="sub">Profissionais enviados pelo app ou cadastrados aqui</div></div>' +
-        '<button class="btn xs ghost" onclick="App.go(\'prof\')">ver</button></div>' +
-        '<div class="item"><div class="grow"><div class="nm">' + pendCerts.length + ' certificação(ões) para liberar</div><div class="sub">Cópias de cursos e diplomas</div></div>' +
-        '<button class="btn xs ghost" onclick="App.go(\'cert\')">ver</button></div>' +
-      '</div>' +
-      '<div class="sec-title">Ações rápidas</div>' +
-      '<div class="grid g2">' +
-        '<button class="btn ghost" onclick="App.cadastroManual()">➕ Cadastrar profissional</button>' +
-        '<button class="btn ghost" onclick="App.go(\'caca\')">📡 Caça profissional</button>' +
-        '<button class="btn ghost" onclick="App.exportar()">⬇️ Backup dos dados</button>' +
-        '<button class="btn ghost" onclick="App.go(\'config\')">⚙️ Configurações</button>' +
-      '</div>';
+      }).join('') : '<div class="empty" style="border:0;padding:14px">Ninguém conectado agora.</div>') + '</div>';
+  }
+
+  function masterUsuarios() {
+    var lista = users().slice().sort(function (a, b) { return (b.criadoEm || '').localeCompare(a.criadoEm || ''); });
+    function linha(u) {
+      return '<div class="list-card" style="align-items:center">' + avatar(u) +
+        '<div class="grow" style="min-width:0"><div class="pc-name" style="font-size:14.5px">' + esc(u.nome) + '</div>' +
+        '<div class="muted small spo">' + esc(u.tipo === 'profissional' ? (u.profissao || 'profissional') : 'cliente') +
+        ' · ' + esc(u.whats || 'sem telefone') + '</div>' +
+        '<div class="row" style="gap:5px;margin-top:5px;flex-wrap:wrap"><span class="chip ' + (u.status === 'aprovado' ? 'green' : u.status === 'pendente' ? 'gold' : 'red') + '">' + esc(u.status) + '</span>' +
+        (isOnline(u.id) ? '<span class="chip blue">online</span>' : '') + '</div></div>' +
+        '<div style="text-align:right"><button class="btn xs ghost" onclick="App.bloquear(\'' + u.id + '\')">' + (u.status === 'aprovado' ? 'bloquear' : 'liberar') + '</button>' +
+        '<button class="btn xs danger" style="margin-top:5px" onclick="App.excluir(\'' + u.id + '\')">remover</button></div></div>';
+    }
+    return '<h2>Usuários</h2><p class="muted small">' + lista.length + ' cadastros · ' + onlineCount() + ' online agora</p>' +
+      (lista.length ? lista.map(linha).join('') : '<div class="empty">Nenhum usuário.</div>');
   }
 
   function masterProfs() {
